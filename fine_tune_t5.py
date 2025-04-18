@@ -10,12 +10,51 @@ from datasets import load_dataset, Dataset
 from peft import LoraConfig, get_peft_model, TaskType
 from transformers import BitsAndBytesConfig
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from nltk.stem.porter import *
+import nltk
 
 # --- Load Dataset ---
-hate_neutral = pd.read_csv("neutralized_tweets.csv")
-dataset = [{"original": hate_neutral["processed_tweets"][i], "neutral": hate_neutral["neutralized_tweets"][i]} for i in range(len(hate_neutral))]
-hate_neutral_eval = pd.read_csv("neutralized_tweets_eval.csv")
-dataset_eval = [{"original": hate_neutral["processed_tweets"][i], "neutral": hate_neutral["neutralized_tweets"][i]} for i in range(len(hate_neutral_eval))]
+def preprocess(tweet_series):
+    stopwords = nltk.corpus.stopwords.words('english')
+    other_exclusions = ["#ff", "ff", "rt"]
+    stopwords.extend(other_exclusions)
+    stemmer = PorterStemmer()
+    tweet_series = tweet_series.astype(str)
+
+    tweet_series = tweet_series.str.replace(r'\s+', ' ', regex=True)
+    tweet_series = tweet_series.str.replace(r'@[\w\-]+', '', regex=True)
+    tweet_series = tweet_series.str.replace(r'http[s]?://\S+', '', regex=True)
+
+    tweet_series = tweet_series.str.replace(r'[^a-zA-Z]', ' ', regex=True)
+    tweet_series = tweet_series.str.replace(r'\s+', ' ', regex=True)
+    tweet_series = tweet_series.str.replace(r'^\s+|\s+?$', '', regex=True)
+    tweet_series = tweet_series.str.replace(r'\d+(\.\d+)?', 'numbr', regex=True)
+    tweet_series = tweet_series.str.lower()
+
+    tokenized = tweet_series.apply(lambda x: x.split())
+    # tokenized = tokenized.apply(lambda x: [w for w in x if w not in stopwords])
+    # tokenized = tokenized.apply(lambda x: [stemmer.stem(w) for w in x])
+    cleaned = tokenized.apply(lambda x: ' '.join(x))
+    return cleaned
+
+dataset = pd.read_csv('data.csv')
+dataset["original_comment"] = preprocess(dataset["original_comment"])
+dataset["non_offensive_comment"] = preprocess(dataset["non_offensive_comment"])
+
+hate_neutral, hate_neutral_eval = train_test_split(dataset, test_size=0.2, random_state=42)
+
+
+
+dataset = hate_neutral.apply(lambda row: {
+    "original": row["original_comment"],
+    "neutral": row["non_offensive_comment"]
+}, axis=1).tolist()
+
+dataset_eval = hate_neutral_eval.apply(lambda row: {
+    "original": row["original_comment"],
+    "neutral": row["non_offensive_comment"]
+}, axis=1).tolist()
 
 def format_example(example):
     previous_tweet = example["original"]
